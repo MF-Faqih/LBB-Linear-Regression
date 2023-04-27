@@ -1,0 +1,246 @@
+---
+title: "LBB-ML"
+author: "MFFaqih"
+date: "2023-03-03"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_section: true
+    collapsed: false
+    smooth_scroll: false
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Import Library
+
+```{r warning=F, message=F}
+library(dplyr)
+library(GGally)
+library(lmtest)
+library(car)
+library(ggplot2)
+library(MLmetrics)
+```
+
+
+# Read File
+
+```{r}
+house <- read.csv("HousePrices_HalfMil.csv")
+house
+```
+
+  Our dataset containing information about price of some ohuses. The price of the house determined by house properties such as total floors, swimming pool availability, total garage and many more. This data set has total 16 columns, and in this regression prediction, prices column will be target variable, and the rest will be predictor.
+
+  
+# Checking Missing Value
+
+```{r}
+colSums(is.na(house))
+```
+
+  There's no missing value in all columns
+
+
+# Data Coertion
+
+```{r}
+glimpse(house)
+```
+
+```{r}
+house <- house %>% 
+  mutate(White.Marble = as.factor(White.Marble),
+         Black.Marble = as.factor(Black.Marble),
+         Indian.Marble = as.factor(Indian.Marble),
+         Floors = as.factor(Floors),
+         City = as.factor(City),
+         Solar = as.factor(Solar),
+         Electric = as.factor(Electric),
+         Fiber = as.factor(Fiber),
+         Glass.Doors = as.factor(Glass.Doors),
+         Swiming.Pool = as.factor(Swiming.Pool),
+         Garden = as.factor(Garden))
+```
+
+```{r}
+glimpse(house)
+```
+  All columns already in their appropriate data type
+
+# Checking for Outliers
+
+```{r}
+summary(house)
+```
+
+  Area is one of the properties that determine house prices, from summary above, the biggest house has total area 249, meanwhile the smallest only have total area of 1, we need to do simple analysis to see if there's outlier in this column or not.
+  
+```{r}
+Q1 <- quantile(house$Area, 0.25)
+Q3 <- quantile(house$Area, 0.75)
+IQR <- Q3 - Q1
+
+outliers <- house$Area < (Q1 - 1.5 * IQR) | house$Area > (Q3 + 1.5 * IQR)
+
+house$Area[outliers]
+```
+
+  From outliers test above, I can say all data already in normal range data, so no outlier detected in this column.
+
+
+# Cross Validation
+
+  For validation process, I'll separate 80% as train data and the rest as test data
+```{r}
+set.seed(123)
+
+index <- sample(1:nrow(house), size = floor(0.8 * nrow(house)))
+
+# Split data into train and test sets
+data_train <- house[index, ]
+data_test <- house[-index, ]
+```
+
+  I'll try to make three models with different condition, first model will only use numeric columns, second model will only use categoric column and third model will use all column as predictor
+
+## First Model
+
+```{r}
+model1 <- lm(Prices ~ Area + Garage + FirePlace + Baths, data_train)
+summary(model1)
+```
+
+## Second Model
+
+```{r}
+model2 <- lm(Prices ~ ., data_train)
+summary(model2)
+```
+
+  From summary above, there's NA value in for indian market, this can be indicator that indian marbel has highly correlation with another column, so I decided to remove it, also this model will no longer be use because can cause error in model evaluation process
+
+## Third Model
+
+```{r}
+model3 <- lm(Prices ~ White.Marble + Black.Marble + Floors + City + Solar + Electric + Fiber + Glass.Doors + Swiming.Pool + Garden, data_train)
+summary(model3)
+```
+
+## Fourth Model
+
+ From third model, we know there's two column that has least contribution (not significant) in to our model, they are Swimming.Pool and Garden so, I'll make another model without this two columns
+
+```{r}
+model4 <- lm(Prices ~ White.Marble + Black.Marble + Floors + City + Solar + Electric + Fiber + Glass.Doors, data_train)
+summary(model4)
+```
+
+# Model Evaluation
+
+  In order to know which model has better performance, we will do some test such as RMSE and MAE
+
+## RMSE first model
+
+```{r}
+first_pred <- predict(model1, newdata = data_test %>% select(-Prices))
+```
+
+RMSE of train data set
+```{r}
+RMSE(y_pred = model1$fitted.values, y_true = data_train$Prices)
+```
+
+RMSE of test data set
+```{r}
+RMSE(y_pred = first_pred, y_true = data_test$Prices)
+```
+
+## RMSE third model
+
+```{r}
+third_pred <- predict(model3, newdata = data_test %>% select(-Prices))
+```
+
+RMSE of train data set
+```{r}
+RMSE(y_pred = model3 $fitted.values, y_true = data_train$Prices)
+```
+
+RMSE of test data set
+```{r}
+RMSE(y_pred = third_pred, y_true = data_test$Prices)
+```
+
+## RMSE fourth model
+
+```{r}
+fourth_pred <- predict(model4, newdata = data_test %>% select(-Prices))
+```
+
+RMSE of train data set
+```{r}
+RMSE(y_pred = model4$fitted.values, y_true = data_train$Prices)
+```
+
+RMSE of test data set
+```{r}
+RMSE(y_pred = fourth_pred, y_true = data_test$Prices)
+```
+
+  From RMSE test I can say third model is the best model since it has least value of RMSE than the other two
+
+# LM assumption test
+
+  For the final step, I will do some assumption test they are Normality, heteroscedasticity, multicoliinearity and linearity.
+
+## Normality Test
+  
+  This test perform to know whether the model residual has normality distribution or not, good model must have normal distribution pattern on its residuals
+
+```{r}
+hist(model4$residuals)
+```
+
+From normality test, both model has normal distribution.
+
+
+
+## Heteroscedasticity
+
+```{r}
+bptest(model4)
+```
+
+```{r}
+plot(resid(model4))
+```
+
+  Since total observation in our data are too big, its really hard to check heteroscedasticity assumption. But from bptest, since p-value is bigger than 0.05 there's no heteroscedasticity
+
+## Multicoliinearity
+
+```{r}
+vif(model4)
+```
+
+  No multicollinearity detected
+
+## Linearity
+
+```{r}
+plot(model4, 1)
+```
+
+  From residual plot above, is already meet the linearity assumption
+
+# Conclusion:
+
+- From our model evaluation, I can say that the data is neither overfitted nor underfitted.
+
+- Model 4 is model with best performance with smallest value of r-square
